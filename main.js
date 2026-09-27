@@ -21,6 +21,7 @@
     root.dataset.theme = t;
     try { localStorage.setItem('theme', t); } catch (e) {}
     paintThemeLabel();
+    if (phase === 'ready') showPortraitNow();   // portrait shading depends on theme
     return 'Switched to ' + t + ' mode.';
   }
   paintThemeLabel();
@@ -108,70 +109,99 @@
   }
 
   /* ------------------------------------------------------------------------
-     Donut (a torus projected into the character grid, after donut.c)
+     Portraits: images converted to ASCII at runtime. One is picked at random
+     every time the art appears. They use a "dense" grid - half-size font in
+     the same box - for 2x the columns and 2.5x the rows of the hex dump.
      ---------------------------------------------------------------------- */
-  var RAMP = '.:-=+*%@#';            // dark -> bright, from the reference art
+  var PORTRAITS = [
+    { name: 'hellsing', src: 'assets/hellsing.jpg',
+      crop: { l: 0.1, r: 0.07, t: 0, b: 0 },            // trim the white page margins
+      levels: { black: 0.2, white: 0.85, gamma: 0.65 } },
+    { name: 'vagabond', src: 'assets/vagabond.png',
+      crop: { l: 0, r: 0, t: 0, b: 0 },
+      // The wall is nearly as bright as the face: steeper curve + fade the edges.
+      levels: { black: 0.4, white: 1, gamma: 1.8 },
+      vignette: { cx: 0.5, cy: 0.58, r: 0.34, soft: 0.34 } }
+  ];
+  var RAMP = ' .:-=+*%@#';            // dark -> bright
   var BLANK = { c: ' ', k: ' ' };
-  var CELLS = RAMP.split('').map(function (ch, i) {
-    return { c: ch, k: i < 3 ? 'd1' : i < 6 ? 'd2' : 'd3' };
-  });
-  var TAU = Math.PI * 2;
-  var trigTheta = [], trigPhi = [];
-  for (var th = 0; th < TAU; th += 0.05) trigTheta.push([Math.cos(th), Math.sin(th)]);
-  for (var ph = 0; ph < TAU; ph += 0.014) trigPhi.push([Math.cos(ph), Math.sin(ph)]);
+  var portrait = null;                // the one showing (or about to)
+  var images = {};                    // src -> Promise<HTMLImageElement>
 
-  var A0 = 1.05, B0 = 0.35;               // starting pose: tilted so the hole shows
-  var SPIN_A = 0.00085, SPIN_B = 0.0004;  // radians per ms
-  var spinStart = 0;
+  function pickPortrait() {
+    return PORTRAITS[rand(PORTRAITS.length)];
+  }
 
-  function donutGrid(A, B) {
-    var W = layout.width, H = layout.rows;
-    var R1 = 0.95, R2 = 2.2, K2 = 5;   // tube radius, ring radius, camera distance
-    var D = Math.min(W * cell.w, H * cell.h);
-    // Largest |x/z| or |y/z| over every rotation is ~0.81 for these radii,
-    // so this keeps the whole donut inside the box at any angle.
-    var K1 = D * 0.49 / 0.82;
-    var cx = W * cell.w / 2, cy = H * cell.h / 2;
-    var cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
-    var zbuf = new Float32Array(W * H);   // 0 = empty
-    var lum = new Float32Array(W * H);
-
-    for (var i = 0; i < trigTheta.length; i++) {
-      var ct = trigTheta[i][0], st = trigTheta[i][1];
-      var circx = R2 + R1 * ct, circy = R1 * st;
-      for (var j = 0; j < trigPhi.length; j++) {
-        var cp = trigPhi[j][0], sp = trigPhi[j][1];
-        var x = circx * (cB * cp + sA * sB * sp) - circy * cA * sB;
-        var y = circx * (sB * cp - sA * cB * sp) + circy * cA * cB;
-        var ooz = 1 / (K2 + cA * circx * sp + circy * sA);
-        var col = Math.floor((cx + K1 * ooz * x) / cell.w);
-        var row = Math.floor((cy - K1 * ooz * y) / cell.h);
-        if (col < 0 || col >= W || row < 0 || row >= H) continue;
-        var idx = row * W + col;
-        if (ooz > zbuf[idx]) {
-          zbuf[idx] = ooz;
-          lum[idx] = cp * ct * sB - cA * ct * sp - sA * st + cB * (cA * st - ct * sA * sp);
-        }
-      }
+  function loadImage(src) {
+    if (!images[src]) {
+      images[src] = new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () { resolve(img); };
+        img.onerror = reject;
+        img.src = src;
+      });
+      images[src].catch(function () { delete images[src]; });
     }
+    return images[src];
+  }
 
+  function denseDims() {
+    return { W: layout.width * 2, H: Math.round(layout.rows * 2.5) };
+  }
+
+  function blankGrid(W, H) {
     var grid = [];
     for (var r = 0; r < H; r++) {
-      var out = [];
-      for (var c = 0; c < W; c++) {
-        var k = r * W + c;
-        if (!zbuf[k]) { out.push(BLANK); continue; }
-        var t = (lum[k] + Math.SQRT2) / (2 * Math.SQRT2);   // 0..1
-        out.push(CELLS[Math.min(RAMP.length - 1, Math.floor(t * RAMP.length))]);
-      }
-      grid.push(out);
+      var row = [];
+      for (var c = 0; c < W; c++) row.push(BLANK);
+      grid.push(row);
     }
     return grid;
   }
 
-  function donutAt(now) {
-    var t = now - spinStart;
-    return donutGrid(A0 + t * SPIN_A, B0 + t * SPIN_B);
+  function portraitGrid(img, p) {
+    var d = denseDims();
+    var sx = img.width * p.crop.l, sy = img.height * p.crop.t;
+    var sw = img.width * (1 - p.crop.l - p.crop.r);
+    var sh = img.height * (1 - p.crop.t - p.crop.b);
+    // Fit the image inside the box, respecting the (non-square) character cell.
+    var scale = Math.min(d.W * cell.w / sw, d.H * cell.h / sh);
+    var cols = Math.max(1, Math.min(d.W, Math.round(sw * scale / cell.w)));
+    var rows = Math.max(1, Math.min(d.H, Math.round(sh * scale / cell.h)));
+
+    var canvas = document.createElement('canvas');
+    canvas.width = cols;
+    canvas.height = rows;
+    var ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cols, rows);
+    var px = ctx.getImageData(0, 0, cols, rows).data;
+
+    // Bright pixels become dense glyphs; flip in light mode so the picture
+    // stays a positive (skin light, hair dark) against the page.
+    var invert = root.dataset.theme === 'light';
+    var L = p.levels, V = p.vignette, n = RAMP.length;
+    var grid = blankGrid(d.W, d.H);
+    var left = Math.floor((d.W - cols) / 2), top = Math.floor((d.H - rows) / 2);
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var i = (r * cols + c) * 4;
+        var lum = (0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]) / 255;
+        lum = Math.min(1, Math.max(0, (lum - L.black) / (L.white - L.black)));
+        lum = Math.pow(lum, L.gamma);
+        if (V) {   // fade towards the edges (distance in image-relative units)
+          var dist = Math.hypot(c / cols - V.cx, r / rows - V.cy);
+          var f = Math.min(1, Math.max(0, (dist - V.r) / V.soft));
+          lum *= 1 - f * f * (3 - 2 * f);
+        }
+        if (invert) lum = 1 - lum;
+        var k = Math.min(n - 1, Math.floor(lum * n));
+        if (k === 0) continue;
+        grid[top + r][left + c] = { c: RAMP[k], k: k < 4 ? 'd1' : k < 7 ? 'd2' : 'd3' };
+      }
+    }
+    return grid;
   }
 
   /* ------------------------------------------------------------------------
@@ -205,15 +235,8 @@
      Animation
      ---------------------------------------------------------------------- */
   var runId = 0;          // bump to cancel whatever is running
-  var phase = 'intro';    // 'intro' | 'spin' | 'cleared'
-  var onScreen = true;
+  var phase = 'intro';    // 'intro' | 'ready' | 'cleared'
   var GLYPHS = '0123456789ABCDEF./\\|_[]<>=-+*#';
-
-  if ('IntersectionObserver' in window) {
-    new IntersectionObserver(function (entries) {
-      onScreen = entries[0].isIntersecting;
-    }).observe(dumpEl);
-  }
 
   function cancelled(id) { return id !== runId; }
 
@@ -235,8 +258,8 @@
     });
   }
 
-  // Scramble cell-by-cell from a grid into a target, sweeping left to right.
-  // `to(now)` returns the target grid, so the target can already be moving.
+  // Scramble cell-by-cell from one grid into another, sweeping left to right.
+  // `to()` returns the target, so it can change mid-way (e.g. a theme switch).
   function morph(from, to, dur, id) {
     return new Promise(function (resolve, reject) {
       var rows = from.length, width = from[0].length;
@@ -249,10 +272,10 @@
         if (cancelled(id)) return reject('cancel');
         if (t0 === null) t0 = now;
         var t = now - t0;
-        if (t >= dur) { render(to(now)); return resolve(); }
+        if (t >= dur) { render(to()); return resolve(); }
         if (now - last >= 33) {
           last = now;
-          var target = to(now);
+          var target = to();
           var cur = [];
           for (var r = 0; r < rows; r++) {
             var row = [];
@@ -273,53 +296,64 @@
     });
   }
 
-  // Keep the donut turning at ~30fps while it is on screen.
-  function spin(id) {
-    var last = 0;
-    function frame(now) {
-      if (cancelled(id)) return;
-      if (onScreen && now - last >= 33) { last = now; render(donutAt(now)); }
-      requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  }
-
-  function startSpin() {
-    var id = ++runId;
-    phase = 'spin';
-    dumpEl.hidden = false;
+  function setDense(on) {
+    dumpEl.classList.toggle('is-dense', on);
     measureCell();
-    if (reduceMotion) { render(donutGrid(A0, B0)); return; }
-    if (!spinStart) spinStart = performance.now();
-    spin(id);
   }
 
+  // Draw the current portrait straight away (skip, resize, theme change).
+  function showPortraitNow() {
+    var id = ++runId;
+    var p = portrait;
+    phase = 'ready';
+    dumpEl.hidden = false;
+    setDense(true);
+    loadImage(p.src).then(function (img) {
+      if (!cancelled(id)) render(portraitGrid(img, p));
+    }, function () {});
+  }
+
+  // Hex dump types out, scrambles away, and a random portrait scrambles in.
   async function intro() {
     var id = ++runId;
     phase = 'intro';
-    spinStart = 0;
+    portrait = pickPortrait();
+    var p = portrait;
+    var imgReady = loadImage(p.src);    // loads while the dump types
     layout = computeLayout();
     dumpEl.hidden = false;
-    measureCell();
+    setDense(false);
     hexGrid = buildHexGrid(makeBytes());
 
-    if (reduceMotion) { startSpin(); return; }
+    if (reduceMotion) { showPortraitNow(); return; }
 
     try {
       dumpEl.textContent = '';
       await typeRows(hexGrid, id);
       await wait(1100, id);
-      spinStart = performance.now();
-      await morph(hexGrid, donutAt, 1700, id);
-      startSpin();
+      var empty = blankGrid(layout.width, layout.rows);
+      await morph(hexGrid, function () { return empty; }, 700, id);
+
+      var img = await imgReady;
+      if (cancelled(id)) return;
+      setDense(true);
+      var targets = {};   // per theme, so a mid-animation theme switch stays right
+      var target = function () {
+        var t = root.dataset.theme;
+        return targets[t] || (targets[t] = portraitGrid(img, p));
+      };
+      var d = denseDims();
+      await morph(blankGrid(d.W, d.H), target, 1400, id);
+      phase = 'ready';
     } catch (e) {
-      if (e !== 'cancel') throw e;
+      if (e === 'cancel') return;
+      phase = 'ready';   // image failed to load: leave the screen as it is
     }
   }
 
-  // Visitor interacted: skip the rest of the intro straight to the donut.
+  // Visitor interacted: skip the rest of the intro straight to the portrait.
   function settle() {
-    if (phase === 'intro') startSpin();
+    if (phase === 'intro') showPortraitNow();
   }
 
   var resizeTimer;
@@ -327,7 +361,7 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
       layout = computeLayout();
-      if (phase !== 'cleared') startSpin();
+      if (phase !== 'cleared') showPortraitNow();
     }, 150);
   });
 
@@ -355,7 +389,10 @@
 
   function contactOut() {
     var frag = document.createDocumentFragment();
-    frag.append('github   ', link('https://github.com/Al3xM4rki', 'github.com/Al3xM4rki'));
+    frag.append(
+      'github      ', link('https://github.com/Al3xM4rki', 'github.com/Al3xM4rki'), '\n',
+      'hackerone   ', link('https://hackerone.com/al3xm4rki?type=user', 'hackerone.com/al3xm4rki')
+    );
     return frag;
   }
 
@@ -471,6 +508,7 @@
     if (name !== 'replay') logEl.append(entry);
     scrollToPrompt();
   }
+
 
   function scrollToPrompt() {
     promptEl.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });

@@ -149,15 +149,17 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   min-height:calc(1.5em * 24);
 }
 .dump[hidden]{display:none}
+/* Portraits: half-size glyphs in the same box (152x60 cells vs 76x24). */
+.dump.is-dense{font-size:6px;line-height:1.2;min-height:calc(1.2em * 60)}
 .dump .o{color:var(--fg-50)}   /* offset */
 .dump .z{color:var(--fg-35)}   /* 00 bytes */
 .dump .h{color:var(--fg-90)}   /* hex byte */
 .dump .a{color:var(--fg-50)}   /* ascii column */
 .dump .t{color:var(--fg)}      /* art */
 .dump .g{color:var(--fg-35)}   /* scramble */
-.dump .d1{color:var(--fg-35)}  /* donut: shadow */
-.dump .d2{color:var(--fg-70)}  /* donut: mid */
-.dump .d3{color:var(--fg)}     /* donut: lit */
+.dump .d1{color:var(--fg-35)}  /* art: shadow */
+.dump .d2{color:var(--fg-70)}  /* art: mid */
+.dump .d3{color:var(--fg)}     /* art: lit */
 
 /* --- Log ---------------------------------------------------------------- */
 .log{max-width:76ch}
@@ -212,6 +214,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   .shell{padding-left:20px;padding-right:20px}
   .title{flex-direction:column;gap:0;font-size:clamp(26px,8vw,34px);margin-bottom:26px}
   .dump{font-size:min(13px, calc((100vw - 40px) / 26.5));min-height:calc(1.5em * 20)}
+  .dump.is-dense{font-size:min(6.5px, calc((100vw - 40px) / 53));min-height:calc(1.2em * 50)}
 }
 
 @media (prefers-reduced-motion:reduce){
