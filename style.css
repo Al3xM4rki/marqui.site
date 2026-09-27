@@ -61,8 +61,12 @@ kbd{
 }
 
 /* --- Shell -------------------------------------------------------------- */
+/* Centered column exactly as wide as the 76-char dump (12px Geist Mono = 7.2px/char),
+   so long command output wraps instead of shifting the layout. */
 .shell{
-  padding:clamp(96px,17vh,168px) 20px 96px clamp(20px,10.5vw,152px);
+  width:min(100%, calc(76 * 7.2px + 40px));
+  margin:0 auto;
+  padding:clamp(96px,17vh,168px) 20px 96px;
 }
 
 .title{
