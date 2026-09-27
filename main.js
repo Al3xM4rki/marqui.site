@@ -557,6 +557,49 @@
   });
 
   /* ------------------------------------------------------------------------
+     Dock magnification (after Aceternity's Floating Dock): each item grows
+     with cursor proximity and eases there on a small spring.
+     ---------------------------------------------------------------------- */
+  (function () {
+    var dock = document.getElementById('dock');
+    if (reduceMotion || !matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+    var BASE = 36, MAX = 54, RANGE = 140;   // px
+    var items = [].slice.call(dock.querySelectorAll('.dock__item'));
+    var state = items.map(function () { return { s: BASE, v: 0 }; });
+    var mouseX = null, raf = 0, lastT = 0;
+
+    function tick(now) {
+      // Step the spring in 60fps units so it feels the same on any refresh rate.
+      var steps = lastT ? Math.min(4, Math.max(1, Math.round((now - lastT) / 16.67))) : 1;
+      lastT = now;
+      var moving = false;
+      items.forEach(function (item, i) {
+        var target = BASE;
+        if (mouseX != null) {
+          var r = item.getBoundingClientRect();
+          var d = Math.abs(mouseX - (r.left + r.width / 2));
+          target = BASE + (MAX - BASE) * Math.max(0, 1 - d / RANGE);
+        }
+        var st = state[i];
+        for (var n = 0; n < steps; n++) {
+          st.v = (st.v + (target - st.s) * 0.25) * 0.6;
+          st.s += st.v;
+        }
+        if (Math.abs(target - st.s) < 0.1 && Math.abs(st.v) < 0.1) { st.s = target; st.v = 0; }
+        else moving = true;
+        item.style.setProperty('--s', st.s.toFixed(2) + 'px');
+      });
+      raf = moving ? requestAnimationFrame(tick) : 0;
+      if (!raf) lastT = 0;
+    }
+    function kick() { if (!raf) raf = requestAnimationFrame(tick); }
+
+    dock.addEventListener('mousemove', function (e) { mouseX = e.clientX; kick(); });
+    dock.addEventListener('mouseleave', function () { mouseX = null; kick(); });
+  })();
+
+  /* ------------------------------------------------------------------------
      Start
      ---------------------------------------------------------------------- */
   paintPrompt();
