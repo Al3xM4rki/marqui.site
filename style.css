@@ -8,6 +8,9 @@
   --fg-35:rgba(255,255,255,.35);
   --fg-20:rgba(255,255,255,.2);
   --key-bg:#1d2226;
+  --dock-shade:rgba(255,255,255,.022);
+  --dock-hover:#131619;
+  --dock-line:rgba(255,255,255,.06);
 }
 :root[data-theme="light"]{
   --bg:#f2f2ef;
@@ -18,6 +21,9 @@
   --fg-35:rgba(11,13,14,.36);
   --fg-20:rgba(11,13,14,.2);
   --key-bg:#dfdfda;
+  --dock-shade:rgba(11,13,14,.05);
+  --dock-hover:#d6d6d0;
+  --dock-line:rgba(11,13,14,.07);
 }
 
 *{box-sizing:border-box}
@@ -44,21 +50,71 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 /* --- Top bar ------------------------------------------------------------ */
 .topbar{
   position:fixed; top:0; left:0; right:0; z-index:10;
-  display:flex; justify-content:space-between; align-items:center;
-  padding:18px 20px;
+  display:flex; justify-content:space-between; align-items:flex-start;
+  padding:12px 14px 12px 20px;
   font-size:13px; letter-spacing:.04em;
   background:linear-gradient(var(--bg) 60%, transparent);
 }
-.crumb{display:flex;align-items:center;gap:8px;color:var(--fg-70);text-decoration:none}
+.crumb{display:flex;align-items:center;gap:8px;height:48px;color:var(--fg-70);text-decoration:none}
 .crumb:hover{color:var(--fg)}
-.keys{display:flex;gap:18px}
-.keys button{display:flex;align-items:center;gap:7px;color:var(--fg);text-transform:uppercase;font-size:11px;letter-spacing:.06em}
-.keys button:hover span{text-decoration:underline;text-underline-offset:3px}
-kbd{
-  font-family:inherit; font-size:10px; line-height:1;
-  padding:4px 5px; border-radius:3px;
-  background:var(--key-bg); color:var(--fg-70);
+
+/* --- Dock (after Aceternity's Floating Dock) ------------------------------
+   Blends into the page at rest; on hover the dock gets a soft shade, the item
+   under the cursor a stronger one, and items magnify by cursor distance
+   (sizes are driven from main.js through --s). */
+.dock{
+  display:flex; align-items:flex-start; gap:6px;
+  padding:6px; border-radius:18px;
+  background:transparent;
+  transition:background-color .2s, box-shadow .2s;
 }
+.dock:hover,
+.dock:focus-within{
+  background:var(--dock-shade);
+  box-shadow:inset 0 0 0 1px var(--dock-line);
+}
+.dock__item{
+  --s:36px;
+  position:relative;
+  display:grid; place-items:center;
+  width:var(--s); height:var(--s);
+  border-radius:999px;
+  color:var(--fg-70);
+  transition:background-color .2s, color .2s;
+}
+.dock__item:hover,
+.dock__item:focus-visible{background:var(--dock-hover);color:var(--fg)}
+.dock__item:focus-visible{outline-offset:2px}
+.dock__icon{
+  font-family:inherit; line-height:1; letter-spacing:0;
+  font-size:calc(var(--s) * .3);
+  background:none; padding:0; color:inherit;
+  pointer-events:none;
+}
+.dock__svg{
+  width:calc(var(--s) * .44); height:calc(var(--s) * .44);
+  pointer-events:none;
+}
+/* Show the mode you'd switch to: sun while dark, moon while light. */
+.icon-moon{display:none}
+:root[data-theme="light"] .icon-sun{display:none}
+:root[data-theme="light"] .icon-moon{display:block}
+.dock__key{color:var(--fg-50);margin-left:.4em}
+.dock__tip{
+  position:absolute; top:calc(100% + 8px); left:50%;
+  transform:translate(-50%, -4px);
+  padding:3px 8px; border-radius:6px;
+  font-size:11px; line-height:1.4; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap;
+  color:var(--fg); background:var(--key-bg);
+  box-shadow:inset 0 0 0 1px var(--dock-line);
+  opacity:0; pointer-events:none;
+  transition:opacity .15s, transform .15s;
+}
+.dock__item:last-child .dock__tip{left:auto;right:0;transform:translate(0, -4px)}
+.dock__item:hover .dock__tip,
+.dock__item:focus-visible .dock__tip{opacity:1;transform:translate(-50%, 0)}
+.dock__item:last-child:hover .dock__tip,
+.dock__item:last-child:focus-visible .dock__tip{transform:translate(0, 0)}
 
 /* --- Shell -------------------------------------------------------------- */
 /* Centered column exactly as wide as the 76-char dump (12px Geist Mono = 7.2px/char),
@@ -156,8 +212,6 @@ kbd{
   .shell{padding-left:20px;padding-right:20px}
   .title{flex-direction:column;gap:0;font-size:clamp(26px,8vw,34px);margin-bottom:26px}
   .dump{font-size:min(13px, calc((100vw - 40px) / 26.5));min-height:calc(1.5em * 20)}
-  .keys kbd{display:none}
-  .keys [data-cmd="help"], .keys [data-cmd="clear"]{display:none}
 }
 
 @media (prefers-reduced-motion:reduce){
